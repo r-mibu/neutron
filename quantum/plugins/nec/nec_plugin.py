@@ -56,6 +56,8 @@ class NECPluginV2(nec_plugin_base.NECPluginV2Base):
           at https://github.com/nec-openstack/quantum-openflow-plugin .
     """
 
+    __native_bulk_support = True
+
     def __init__(self):
         ndb.initialize()
         self.ofc = ofc_manager.OFCManager()
@@ -174,6 +176,29 @@ class NECPluginV2(nec_plugin_base.NECPluginV2Base):
                 self._deactivate_packet_filter(context, pf)
 
     # Quantm Plugin Basic methods
+
+    def _create_bulk(self, resource, context, request_items):
+        objects = []
+        collection = "%ss" % resource
+        items = request_items[collection]
+        context.session.begin(subtransactions=True)
+        try:
+            for item in items:
+                obj_creator = getattr(self, 'create_%s' % resource)
+                objects.append(obj_creator(context, item))
+            context.session.commit()
+        except Exception:
+            LOG.exception("An exception occured while creating "
+                          "the %s:%s", resource, item)
+            try:
+                for obj in objects:
+                    obj_deleter = getattr(self, 'delete_%s' % resource)
+                    obj_deleter(context, obj['id'])
+            except Exception:
+                LOG.exception("An exception occured while deleting "
+                              "the %s:%s for roolback", resource, obj)
+            raise
+        return objects
 
     def create_network(self, context, network):
         """Create a new network entry on DB, and create it on OFC."""
